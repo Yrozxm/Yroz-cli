@@ -13,7 +13,16 @@
 
 ### Features:
 
-**Universal Support** - APT, Pacman, DNF, Portage, XBPS, Zypper, APK, eopkg (Solus), AUR/yay, Nix, Flatpak, and Snap.
+**Universal Support** - Supports package managers and universal formats across all major Linux distributions:
+*   **Debian, Ubuntu, Linux Mint, Pop!_OS** (via `APT`)
+*   **Arch Linux, Manjaro** (via `Pacman` and `AUR/yay`)
+*   **Fedora, RedHat, CentOS** (via `DNF`)
+*   **Gentoo** (via `Portage`)
+*   **Void Linux** (via `XBPS`)
+*   **openSUSE** (via `Zypper`)
+*   **Alpine Linux** (via `APK`)
+*   **Solus OS** (via `eopkg`)
+*   **Universal Formats** (via `Flatpak`, `Snap`, `Nix`, and `AppImage`)
 
 **Transactional AppImages** - Atomic AppImage installation. Downloads to a `.tmp` file and automatically rolls back (deletes files and shortcuts) if any step (download, chmod, desktop shortcuts) fails.
 
