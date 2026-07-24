@@ -4,6 +4,36 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 use colored::*;
+use serde::Deserialize;
+
+#[derive(Deserialize, Debug)]
+struct AppImageFeed {
+    items: Vec<AppImageItem>,
+}
+
+#[derive(Deserialize, Debug)]
+struct AppImageItem {
+    name: String,
+    links: Option<Vec<AppImageLink>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct AppImageLink {
+    #[serde(rename = "type")]
+    link_type: String,
+    url: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct GitHubRelease {
+    assets: Vec<GitHubAsset>,
+}
+
+#[derive(Deserialize, Debug)]
+struct GitHubAsset {
+    name: String,
+    browser_download_url: String,
+}
 
 pub struct AppImageBackend;
 
@@ -115,6 +145,127 @@ impl AppImageBackend {
         
         Ok(())
     }
+
+    async fn resolve_appimage_url(&self, package_name: &str) -> Result<String, String> {
+        let clean_name = package_name.strip_suffix(".appimage")
+            .or_else(|| package_name.strip_suffix(".AppImage"))
+            .unwrap_or(package_name)
+            .to_lowercase();
+
+        println!("Pesquisando '{}' no catálogo do AppImage...", clean_name);
+        
+        let temp_feed_path = self.get_home_dir().join(".cache/yroz/feed.json");
+        if let Some(parent) = temp_feed_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        let feed_url = "https://appimage.github.io/feed.json";
+        let status = Command::new("curl")
+            .arg("-sL")
+            .arg("-o")
+            .arg(temp_feed_path.to_str().unwrap())
+            .arg(feed_url)
+            .status()
+            .await
+            .map_err(|e| format!("Falha ao baixar feed.json: {}", e))?;
+
+        if !status.success() {
+            return Err("Falha ao baixar o feed de AppImages do catálogo.".to_string());
+        }
+
+        let feed_content = fs::read_to_string(&temp_feed_path)
+            .map_err(|e| format!("Erro ao ler feed.json: {}", e))?;
+
+        let feed: AppImageFeed = serde_json::from_str(&feed_content)
+            .map_err(|e| format!("Erro ao processar catálogo do AppImage: {}", e))?;
+
+        let item = feed.items.into_iter().find(|i| i.name.to_lowercase() == clean_name)
+            .ok_or_else(|| format!("AppImage '{}' não foi encontrado no catálogo.", package_name))?;
+
+        let mut github_repo = None;
+        let mut direct_download = None;
+
+        if let Some(links) = item.links {
+            for link in links {
+                if link.link_type.eq_ignore_ascii_case("GitHub") {
+                    github_repo = Some(link.url);
+                } else if link.link_type.eq_ignore_ascii_case("Download") {
+                    if link.url.to_lowercase().ends_with(".appimage") {
+                        direct_download = Some(link.url);
+                    } else if link.url.contains("github.com") && link.url.contains("/releases") {
+                        let parts: Vec<&str> = link.url.split('/').collect();
+                        if parts.len() >= 5 {
+                            github_repo = Some(format!("{}/{}", parts[3], parts[4]));
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(repo) = github_repo {
+            println!("Localizado repositório GitHub: {}", repo);
+            println!("Consultando a release estável mais recente no GitHub...");
+
+            let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+            let temp_release_path = self.get_home_dir().join(".cache/yroz/release.json");
+            
+            let release_status = Command::new("curl")
+                .arg("-sL")
+                .arg("-H")
+                .arg("User-Agent: yroz-cli")
+                .arg("-o")
+                .arg(temp_release_path.to_str().unwrap())
+                .arg(&api_url)
+                .status()
+                .await
+                .map_err(|e| format!("Falha ao consultar API do GitHub: {}", e))?;
+
+            if !release_status.success() {
+                return Err("Falha ao obter release do GitHub.".to_string());
+            }
+
+            let release_content = fs::read_to_string(&temp_release_path)
+                .map_err(|e| format!("Erro ao ler release.json: {}", e))?;
+
+            let release: GitHubRelease = serde_json::from_str(&release_content)
+                .map_err(|_| "Nenhum arquivo de instalação pública foi encontrado para este AppImage no GitHub.".to_string())?;
+
+            let host_arch = std::env::consts::ARCH;
+            let mut matched_asset = None;
+            
+            for asset in &release.assets {
+                let asset_name_lower = asset.name.to_lowercase();
+                if asset_name_lower.ends_with(".appimage") {
+                    if host_arch == "x86_64" && (asset_name_lower.contains("x86_64") || asset_name_lower.contains("amd64")) {
+                        matched_asset = Some(asset.browser_download_url.clone());
+                        break;
+                    } else if host_arch == "aarch64" && (asset_name_lower.contains("aarch64") || asset_name_lower.contains("arm64")) {
+                        matched_asset = Some(asset.browser_download_url.clone());
+                        break;
+                    }
+                }
+            }
+
+            if matched_asset.is_none() {
+                for asset in &release.assets {
+                    if asset.name.to_lowercase().ends_with(".appimage") {
+                        matched_asset = Some(asset.browser_download_url.clone());
+                        break;
+                    }
+                }
+            }
+
+            if let Some(url) = matched_asset {
+                return Ok(url);
+            }
+        }
+
+        if let Some(url) = direct_download {
+            return Ok(url);
+        }
+
+        Err(format!("Não foi possível encontrar um link de download de AppImage direto ou no GitHub para '{}'.", package_name))
+    }
 }
 
 #[async_trait::async_trait]
@@ -124,25 +275,24 @@ impl PackageManagerBackend for AppImageBackend {
     }
 
     fn is_available(&self) -> bool {
-        // AppImage está sempre disponível no Linux por usar curl e fs locais
         true
     }
 
     async fn search(&self, _query: &str) -> Result<Vec<SearchResult>, String> {
-        // Busca direta em repositório não é suportada por ser focado em instalação de URL
         Ok(Vec::new())
     }
 
     async fn install(&self, package: &str) -> Result<(), String> {
-        if !package.starts_with("http://") && !package.starts_with("https://") {
-            return Err("Para instalar via AppImage, você deve passar a URL direta do arquivo (ex: yroz install https://exemplo.com/app.AppImage)".to_string());
-        }
+        let url = if package.starts_with("http://") || package.starts_with("https://") {
+            package.to_string()
+        } else {
+            self.resolve_appimage_url(package).await?
+        };
 
-        let url = package;
         let filename = url.split('/').last().ok_or_else(|| "URL de AppImage inválida".to_string())?;
         
         if !filename.to_lowercase().ends_with(".appimage") {
-            return Err("A URL fornecida não aponta para um arquivo .AppImage válido".to_string());
+            return Err("A URL resolvida não aponta para um arquivo .AppImage válido".to_string());
         }
 
         let app_dir = self.get_applications_dir();
@@ -154,7 +304,7 @@ impl PackageManagerBackend for AppImageBackend {
             .arg("-L")
             .arg("-o")
             .arg(target_path.to_str().unwrap())
-            .arg(url)
+            .arg(&url)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -206,11 +356,15 @@ impl PackageManagerBackend for AppImageBackend {
         let mut app_file_path = None;
         let mut app_filename = String::new();
 
+        let clean_package = package.strip_suffix(".appimage")
+            .or_else(|| package.strip_suffix(".AppImage"))
+            .unwrap_or(package);
+
         if let Ok(entries) = fs::read_dir(&app_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 let sanitized = self.sanitize_app_name(&name);
-                if name.eq_ignore_ascii_case(package) || sanitized.eq_ignore_ascii_case(package) {
+                if name.eq_ignore_ascii_case(clean_package) || sanitized.eq_ignore_ascii_case(clean_package) {
                     app_file_path = Some(entry.path());
                     app_filename = name;
                     break;
@@ -245,7 +399,6 @@ impl PackageManagerBackend for AppImageBackend {
     }
 
     async fn update(&self) -> Result<(), String> {
-        // AppImages são atualizados reinstalando a URL mais recente
         Ok(())
     }
 
@@ -253,11 +406,15 @@ impl PackageManagerBackend for AppImageBackend {
         let app_dir = self.get_applications_dir();
         let mut found = None;
 
+        let clean_package = package.strip_suffix(".appimage")
+            .or_else(|| package.strip_suffix(".AppImage"))
+            .unwrap_or(package);
+
         if let Ok(entries) = fs::read_dir(&app_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 let sanitized = self.sanitize_app_name(&name);
-                if name.eq_ignore_ascii_case(package) || sanitized.eq_ignore_ascii_case(package) {
+                if name.eq_ignore_ascii_case(clean_package) || sanitized.eq_ignore_ascii_case(clean_package) {
                     found = Some(entry.path());
                     break;
                 }

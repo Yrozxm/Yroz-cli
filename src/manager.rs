@@ -10,6 +10,7 @@ use crate::backend::yay::YayBackend;
 use crate::backend::nix::NixBackend;
 use crate::backend::zypper::ZypperBackend;
 use crate::backend::appimage::AppImageBackend;
+use crate::backend::eopkg::EopkgBackend;
 use crate::backend::{PackageManagerBackend, SearchResult};
 use crate::config::YrozConfig;
 
@@ -63,6 +64,11 @@ impl PackageManager {
         let apk = ApkBackend::new();
         if apk.is_available() && !is_disabled("APK") {
             backends.push(Box::new(apk));
+        }
+
+        let eopkg = EopkgBackend::new();
+        if eopkg.is_available() && !is_disabled("eopkg") {
+            backends.push(Box::new(eopkg));
         }
 
         let yay = YayBackend::new();
@@ -170,8 +176,7 @@ impl PackageManager {
     pub async fn install(&self, package: &str) -> Result<(), String> {
         let config = YrozConfig::load();
 
-        if (package.starts_with("http://") || package.starts_with("https://")) 
-           && package.to_lowercase().ends_with(".appimage") {
+        if package.to_lowercase().ends_with(".appimage") {
             if let Some(appimage) = self.find_backend("AppImage") {
                 return appimage.install(package).await;
             } else {
@@ -206,6 +211,7 @@ impl PackageManager {
                 "Portage".to_string(),
                 "XBPS".to_string(),
                 "APK".to_string(),
+                "eopkg".to_string(),
                 "AUR/yay".to_string(),
                 "Nix".to_string(),
                 "Flatpak".to_string(),
@@ -447,6 +453,7 @@ impl PackageManager {
             ("XBPS".to_string(), XbpsBackend::new().is_available()),
             ("Zypper".to_string(), ZypperBackend::new().is_available()),
             ("APK".to_string(), ApkBackend::new().is_available()),
+            ("eopkg".to_string(), EopkgBackend::new().is_available()),
             ("AUR/yay".to_string(), YayBackend::new().is_available()),
             ("Nix".to_string(), NixBackend::new().is_available()),
             ("Flatpak".to_string(), FlatpakBackend::new().is_available()),

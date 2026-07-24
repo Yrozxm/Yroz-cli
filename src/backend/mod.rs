@@ -10,6 +10,7 @@ pub mod yay;
 pub mod nix;
 pub mod zypper;
 pub mod appimage;
+pub mod eopkg;
 
 use std::fmt;
 
