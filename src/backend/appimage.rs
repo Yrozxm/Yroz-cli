@@ -179,19 +179,42 @@ impl AppImageBackend {
         let feed: AppImageFeed = serde_json::from_str(&feed_content)
             .map_err(|e| format!("Erro ao processar catálogo do AppImage: {}", e))?;
 
-        let item = feed.items.into_iter().find(|i| i.name.to_lowercase() == clean_name)
-            .ok_or_else(|| format!("AppImage '{}' não foi encontrado no catálogo.", package_name))?;
+        let item = feed.items.iter().find(|i| i.name.to_lowercase() == clean_name);
+        
+        let item = match item {
+            Some(i) => i,
+            None => {
+                let mut suggestions = Vec::new();
+                for i in &feed.items {
+                    let item_name_lower = i.name.to_lowercase();
+                    if item_name_lower.contains(&clean_name) || 
+                       (clean_name.len() >= 3 && item_name_lower.len() >= 3 && levenshtein(&clean_name, &item_name_lower) <= 2) {
+                        suggestions.push(i.name.clone());
+                    }
+                }
+                
+                if !suggestions.is_empty() {
+                    return Err(format!(
+                        "AppImage '{}' não foi encontrado no catálogo. Você quis dizer: {}?",
+                        package_name,
+                        suggestions.join(", ").bold()
+                    ));
+                } else {
+                    return Err(format!("AppImage '{}' não foi encontrado no catálogo.", package_name));
+                }
+            }
+        };
 
         let mut github_repo = None;
         let mut direct_download = None;
 
-        if let Some(links) = item.links {
+        if let Some(links) = &item.links {
             for link in links {
                 if link.link_type.eq_ignore_ascii_case("GitHub") {
-                    github_repo = Some(link.url);
+                    github_repo = Some(link.url.clone());
                 } else if link.link_type.eq_ignore_ascii_case("Download") {
                     if link.url.to_lowercase().ends_with(".appimage") {
-                        direct_download = Some(link.url);
+                        direct_download = Some(link.url.clone());
                     } else if link.url.contains("github.com") && link.url.contains("/releases") {
                         let parts: Vec<&str> = link.url.split('/').collect();
                         if parts.len() >= 5 {
@@ -459,4 +482,28 @@ impl PackageManagerBackend for AppImageBackend {
 
         Ok(results)
     }
+}
+
+fn levenshtein(a: &str, b: &str) -> usize {
+    let mut cache = vec![0; b.len() + 1];
+    for (j, val) in cache.iter_mut().enumerate() {
+        *val = j;
+    }
+    for (i, ca) in a.chars().enumerate() {
+        let mut temp = i;
+        cache[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let next_temp = cache[j + 1];
+            if ca == cb {
+                cache[j + 1] = temp;
+            } else {
+                cache[j + 1] = std::cmp::min(
+                    temp + 1,
+                    std::cmp::min(cache[j] + 1, cache[j + 1] + 1)
+                );
+            }
+            temp = next_temp;
+        }
+    }
+    cache[b.len()]
 }
