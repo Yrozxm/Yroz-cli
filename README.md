@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/language-rust-green?style=flat-square" alt="Language">
-  <img src="https://img.shields.io/badge/yroz-v0.1.1-blue?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/yroz-v0.1.2-blue?style=flat-square" alt="Version">
 </p>
 
 <h1 align="center">yroz</h1>
