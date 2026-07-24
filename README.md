@@ -1,99 +1,59 @@
-# Yroz
+<p align="center">
+  <img src="https://img.shields.io/badge/language-rust-green?style=flat-square" alt="Language">
+  <img src="https://img.shields.io/badge/yroz-v0.1.0-blue?style=flat-square" alt="Version">
+</p>
 
-Yroz e um gerenciador universal de software para Linux escrito em Rust. Ele unifica a gestao de pacotes sob um unico comando, detectando dinamicamente o gerenciador nativo da sua distribuicao e integrando suporte a formatos universais.
+<h1 align="center">yroz</h1>
 
-O objetivo e reduzir a fragmentacao de comandos no ecossistema Linux, oferecendo uma interface de linha de comando rapida, consistente e facil de utilizar.
+<p align="center">A universal software manager for Linux, written in Rust</p>
+
+***
+
+**Yroz:** is a command-line tool to manage packages across any Linux distribution, unified under a single command, without dependencies.
+
+### Features:
+
+**Universal Support** - APT, Pacman, DNF, Portage, XBPS, Zypper, APK, AUR/yay, Nix, Flatpak, and Snap.
+
+**Priority Order** - Automatically detects and installs native packages first, with smart fallbacks to Flatpak and Snap.
+
+**Parallel Search** - Concurrent queries in all active package managers with real-time feedback.
+
+**Configuration** - Turn off specific backends or customize installation priorities using a simple TOML file.
+
+**Self-Update** - Keep Yroz updated automatically with one single command.
 
 ---
 
-## Caracteristicas
-
-*   **Deteccao automatica:** Identifica o gerenciador de pacotes da distribuicao em tempo de execucao.
-*   **Suporte nativo e universal:**
-    *   Nativos: APT, Pacman, DNF, Portage, XBPS, Zypper e APK.
-    *   Universais: Flatpak, Snap e Nix (nix-env).
-    *   Repositórios comunitários: AUR (via helper yay).
-*   **Ordem de prioridade inteligente:** Prioriza instalacoes via gerenciador nativo da distribuicao, recorrendo aos gerenciadores universais caso o pacote nao seja encontrado.
-*   **Busca paralela:** Realiza pesquisas concorrentes em todas as fontes ativas para entregar resultados instantaneos.
-*   **Altamente configuravel:** Suporta desativacao de fontes e alteracao na ordem de prioridades de instalacao atraves de um arquivo TOML simples.
-*   **Auto-atualizacao:** Atualiza seu proprio binario diretamente a partir das releases do GitHub.
-
----
-
-## Como Compilar e Instalar
-
-### Requisitos
-*   Rust toolchain (cargo)
-
-### Compilacao
-Para gerar o binario otimizado de producao, clone o repositorio e execute:
+### How to Install:
 
 ```bash
 cargo build --release
-```
-
-### Instalacao Global
-Mova o binario compilado para o PATH do seu sistema para executa-lo de qualquer lugar:
-
-```bash
 sudo cp target/release/yroz /usr/local/bin/yroz
 ```
 
----
+### Commands:
 
-## Interface de Comando (CLI)
+```bash
+yroz status
+yroz search <query>
+yroz install <package>
+yroz remove <package>
+yroz update
+yroz info <package>
+yroz list
+yroz self-update
+```
 
-*   **Verificar estado:** Mostra quais gerenciadores estao ativos e configurados no sistema.
-    ```bash
-    yroz status
-    ```
-*   **Buscar pacotes:** Pesquisa concorrente em todas as fontes habilitadas.
-    ```bash
-    yroz search <termo>
-    ```
-*   **Instalar pacote:** Segue a ordem de prioridades com deteccao inteligente de App IDs.
-    ```bash
-    yroz install <pacote>
-    ```
-*   **Remover pacote:** Deteta de onde o pacote veio e o remove.
-    ```bash
-    yroz remove <pacote>
-    ```
-*   **Atualizar fontes:** Atualiza a base de dados de todos os gerenciadores ativos.
-    ```bash
-    yroz update
-    ```
-*   **Detalhes do pacote:** Mostra metadados e estado de instalacao local.
-    ```bash
-    yroz info <pacote>
-    ```
-*   **Listar instalados:** Exibe os pacotes instalados por fonte.
-    ```bash
-    yroz list
-    ```
-*   **Auto-atualizar:**
-    ```bash
-    yroz self-update
-    ```
+### Configuration:
 
----
-
-## Configuracao
-
-Você pode personalizar o comportamento do Yroz criando o arquivo em `~/.config/yroz/config.toml`.
-
-### Exemplo de configuracao:
+Create a file in `~/.config/yroz/config.toml`:
 
 ```toml
-# Lista de gerenciadores a serem ignorados completamente
 disabled_backends = ["Snap"]
-
-# Ordem customizada de prioridade para o comando de instalacao
 priority = ["Nix", "Flatpak", "APT"]
 ```
 
 ---
 
-## Licenca
-
-Este projeto e open-source e licenciado sob a licenca MIT.
+License: MIT
