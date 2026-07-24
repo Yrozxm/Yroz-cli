@@ -325,21 +325,84 @@ impl PackageManagerBackend for AppImageBackend {
 
         println!("Iniciando o download do AppImage de {}...", url);
 
-        let status = Command::new("curl")
-            .arg("-L")
-            .arg("-#")
-            .arg("-o")
-            .arg(temp_path.to_str().unwrap())
+        let header_output = Command::new("curl")
+            .arg("-sIL")
             .arg(&url)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
+            .output()
             .await
-            .map_err(|e| {
+            .map_err(|e| format!("Falha ao obter cabeçalhos do arquivo: {}", e))?;
+
+        let mut total_size = 0;
+        let header_str = String::from_utf8_lossy(&header_output.stdout);
+        for line in header_str.lines() {
+            if line.to_lowercase().starts_with("content-length:") {
+                if let Some(val) = line.split(':').nth(1) {
+                    total_size = val.trim().parse::<u64>().unwrap_or(0);
+                }
+            }
+        }
+
+        let mut child = Command::new("curl")
+            .arg("-sL")
+            .arg(&url)
+            .stdout(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Falha ao iniciar download com curl: {}", e))?;
+
+        let mut stdout = child.stdout.take().ok_or_else(|| "Falha ao capturar saída do curl".to_string())?;
+
+        let mut file = match tokio::fs::File::create(&temp_path).await {
+            Ok(f) => f,
+            Err(e) => {
+                let _ = child.kill().await;
+                return Err(format!("Falha ao criar arquivo temporário: {}", e));
+            }
+        };
+
+        use indicatif::{ProgressBar, ProgressStyle};
+        let pb = if total_size > 0 {
+            ProgressBar::new(total_size)
+        } else {
+            ProgressBar::new_spinner()
+        };
+
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.magenta} {msg:.bold} ▕{bar:40.magenta/cyan}▏ {percent}% │ {bytes}/{total_bytes} │ {eta}")
+                .unwrap()
+                .progress_chars("█▓▒░")
+        );
+        pb.set_message("Baixando");
+
+        let mut buffer = [0; 8192];
+        let mut downloaded = 0;
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        loop {
+            let n = match stdout.read(&mut buffer).await {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) => {
+                    let _ = child.kill().await;
+                    let _ = fs::remove_file(&temp_path);
+                    return Err(format!("Erro durante a leitura do download: {}", e));
+                }
+            };
+
+            if let Err(e) = file.write_all(&buffer[..n]).await {
+                let _ = child.kill().await;
                 let _ = fs::remove_file(&temp_path);
-                format!("Falha ao executar curl: {}", e)
-            })?;
+                return Err(format!("Erro ao gravar dados temporários: {}", e));
+            }
+
+            downloaded += n as u64;
+            pb.set_position(downloaded);
+        }
+
+        pb.finish_with_message("Download concluído");
+
+        let status = child.wait().await
+            .map_err(|e| format!("Erro ao aguardar processo de download: {}", e))?;
 
         if !status.success() {
             let _ = fs::remove_file(&temp_path);
