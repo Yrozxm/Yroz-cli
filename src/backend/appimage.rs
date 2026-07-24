@@ -327,6 +327,7 @@ impl PackageManagerBackend for AppImageBackend {
 
         let status = Command::new("curl")
             .arg("-L")
+            .arg("-#")
             .arg("-o")
             .arg(temp_path.to_str().unwrap())
             .arg(&url)
