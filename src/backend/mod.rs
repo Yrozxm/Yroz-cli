@@ -11,6 +11,7 @@ pub mod nix;
 pub mod zypper;
 pub mod appimage;
 pub mod eopkg;
+pub mod napt;
 
 use std::fmt;
 

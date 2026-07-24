@@ -11,6 +11,7 @@ use crate::backend::nix::NixBackend;
 use crate::backend::zypper::ZypperBackend;
 use crate::backend::appimage::AppImageBackend;
 use crate::backend::eopkg::EopkgBackend;
+use crate::backend::napt::NaptBackend;
 use crate::backend::{PackageManagerBackend, SearchResult};
 use crate::config::YrozConfig;
 
@@ -30,6 +31,11 @@ impl PackageManager {
         };
 
         let mut backends: Vec<Box<dyn PackageManagerBackend>> = Vec::new();
+
+        let napt = NaptBackend::new();
+        if napt.is_available() && !is_disabled("NAPT") {
+            backends.push(Box::new(napt));
+        }
 
         let apt = AptBackend::new();
         if apt.is_available() && !is_disabled("APT") {
@@ -205,6 +211,7 @@ impl PackageManager {
             config.priority.clone()
         } else {
             vec![
+                "NAPT".to_string(),
                 "APT".to_string(),
                 "Pacman".to_string(),
                 "DNF".to_string(),
@@ -446,6 +453,7 @@ impl PackageManager {
         println!("Estado dos Gerenciadores de Pacotes:\n");
         
         let all_backends: Vec<(String, bool)> = vec![
+            ("NAPT".to_string(), NaptBackend::new().is_available()),
             ("APT".to_string(), AptBackend::new().is_available()),
             ("Pacman".to_string(), PacmanBackend::new().is_available()),
             ("DNF".to_string(), DnfBackend::new().is_available()),
