@@ -40,6 +40,12 @@
 
 ### How to Install:
 
+**Quick Install (Precompiled Binary):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Yrozxm/Yroz-cli/main/install.sh | sh
+```
+
+**Build from Source:**
 ```bash
 cargo build --release
 sudo cp target/release/yroz /usr/local/bin/yroz
