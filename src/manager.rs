@@ -9,6 +9,7 @@ use crate::backend::apk::ApkBackend;
 use crate::backend::yay::YayBackend;
 use crate::backend::nix::NixBackend;
 use crate::backend::zypper::ZypperBackend;
+use crate::backend::appimage::AppImageBackend;
 use crate::backend::{PackageManagerBackend, SearchResult};
 use crate::config::YrozConfig;
 
@@ -82,6 +83,11 @@ impl PackageManager {
         let snap = SnapBackend::new();
         if snap.is_available() && !is_disabled("Snap") {
             backends.push(Box::new(snap));
+        }
+
+        let appimage = AppImageBackend::new();
+        if appimage.is_available() && !is_disabled("AppImage") {
+            backends.push(Box::new(appimage));
         }
 
         Self { backends }
@@ -163,6 +169,15 @@ impl PackageManager {
 
     pub async fn install(&self, package: &str) -> Result<(), String> {
         let config = YrozConfig::load();
+
+        if (package.starts_with("http://") || package.starts_with("https://")) 
+           && package.to_lowercase().ends_with(".appimage") {
+            if let Some(appimage) = self.find_backend("AppImage") {
+                return appimage.install(package).await;
+            } else {
+                return Err("Backend do AppImage não está disponível ou foi desativado.".to_string());
+            }
+        }
 
         if package.contains('.') {
             if let Some(flatpak) = self.find_backend("Flatpak") {
@@ -436,6 +451,7 @@ impl PackageManager {
             ("Nix".to_string(), NixBackend::new().is_available()),
             ("Flatpak".to_string(), FlatpakBackend::new().is_available()),
             ("Snap".to_string(), SnapBackend::new().is_available()),
+            ("AppImage".to_string(), AppImageBackend::new().is_available()),
         ];
 
         for (name, available) in all_backends {

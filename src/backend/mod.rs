@@ -9,6 +9,7 @@ pub mod apk;
 pub mod yay;
 pub mod nix;
 pub mod zypper;
+pub mod appimage;
 
 use std::fmt;
 
