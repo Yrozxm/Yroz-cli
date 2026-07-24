@@ -13,7 +13,11 @@
 
 ### Features:
 
-**Universal Support** - APT, Pacman, DNF, Portage, XBPS, Zypper, APK, AUR/yay, Nix, Flatpak, and Snap.
+**Universal Support** - APT, Pacman, DNF, Portage, XBPS, Zypper, APK, eopkg (Solus), AUR/yay, Nix, Flatpak, and Snap.
+
+**Transactional AppImages** - Atomic AppImage installation. Downloads to a `.tmp` file and automatically rolls back (deletes files and shortcuts) if any step (download, chmod, desktop shortcuts) fails.
+
+**Fuzzy AppImage Resolving** - Install AppImages by name (e.g. `prismlauncher.appimage`). Yroz resolves the repository, CPU architecture, and GitHub releases automatically.
 
 **Priority Order** - Automatically detects and installs native packages first, with smart fallbacks to Flatpak and Snap.
 
