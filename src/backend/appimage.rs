@@ -319,6 +319,8 @@ impl PackageManagerBackend for AppImageBackend {
         }
 
         let app_dir = self.get_applications_dir();
+        let temp_filename = format!("{}.tmp", filename);
+        let temp_path = app_dir.join(&temp_filename);
         let target_path = app_dir.join(filename);
 
         println!("Iniciando o download do AppImage de {}...", url);
@@ -326,49 +328,85 @@ impl PackageManagerBackend for AppImageBackend {
         let status = Command::new("curl")
             .arg("-L")
             .arg("-o")
-            .arg(target_path.to_str().unwrap())
+            .arg(temp_path.to_str().unwrap())
             .arg(&url)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .status()
             .await
-            .map_err(|e| format!("Falha ao executar curl: {}", e))?;
+            .map_err(|e| {
+                let _ = fs::remove_file(&temp_path);
+                format!("Falha ao executar curl: {}", e)
+            })?;
 
         if !status.success() {
-            let _ = fs::remove_file(&target_path);
+            let _ = fs::remove_file(&temp_path);
             return Err("Falha ao baixar o arquivo AppImage.".to_string());
         }
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&target_path)
-                .map_err(|e| format!("Erro ao obter metadados do arquivo: {}", e))?
-                .permissions();
+            let metadata = match fs::metadata(&temp_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    let _ = fs::remove_file(&temp_path);
+                    return Err(format!("Erro ao obter metadados do arquivo temporário: {}", e));
+                }
+            };
+            let mut perms = metadata.permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(&target_path, perms)
-                .map_err(|e| format!("Falha ao aplicar permissões de execução: {}", e))?;
+            if let Err(e) = fs::set_permissions(&temp_path, perms) {
+                let _ = fs::remove_file(&temp_path);
+                return Err(format!("Falha ao aplicar permissões de execução: {}", e));
+            }
         }
 
         let sanitized_name = self.sanitize_app_name(filename);
-        println!("AppImage instalado em: {:?}", target_path);
-        println!("Higienizando atalhos como: {}", sanitized_name);
-
         let system_applications_dir = self.get_home_dir().join(".local/share/applications");
+        let desktop_dir = self.get_desktop_dir();
+
+        let mut created_shortcuts = Vec::new();
+
         if !system_applications_dir.exists() {
-            let _ = fs::create_dir_all(&system_applications_dir);
+            if let Err(e) = fs::create_dir_all(&system_applications_dir) {
+                let _ = fs::remove_file(&temp_path);
+                return Err(format!("Falha ao criar diretório de atalhos do sistema: {}", e));
+            }
         }
         
-        let _ = self.create_desktop_shortcut(&sanitized_name, &target_path, &system_applications_dir);
+        let system_shortcut_path = system_applications_dir.join(format!("yroz-{}.desktop", sanitized_name.to_lowercase()));
+        if let Err(e) = self.create_desktop_shortcut(&sanitized_name, &target_path, &system_applications_dir) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("Falha ao criar atalho no menu de aplicativos: {}", e));
+        }
+        created_shortcuts.push(system_shortcut_path);
 
-        let desktop_dir = self.get_desktop_dir();
+        let desktop_shortcut_path = desktop_dir.join(format!("yroz-{}.desktop", sanitized_name.to_lowercase()));
         if desktop_dir.exists() {
             if let Err(e) = self.create_desktop_shortcut(&sanitized_name, &target_path, &desktop_dir) {
-                println!("{} Aviso: Falha ao criar atalho na Área de Trabalho: {}", "".yellow(), e);
-            } else {
-                println!("Atalho criado na Área de Trabalho com sucesso!");
+                for shortcut in created_shortcuts {
+                    let _ = fs::remove_file(shortcut);
+                }
+                let _ = fs::remove_file(&temp_path);
+                return Err(format!("Falha ao criar atalho na Área de Trabalho: {}", e));
             }
+            created_shortcuts.push(desktop_shortcut_path);
+        }
+
+        if let Err(e) = fs::rename(&temp_path, &target_path) {
+            for shortcut in created_shortcuts {
+                let _ = fs::remove_file(shortcut);
+            }
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("Falha ao efetivar a instalação (rename falhou): {}", e));
+        }
+
+        println!("AppImage instalado em: {:?}", target_path);
+        println!("Higienizando atalhos como: {}", sanitized_name);
+        if desktop_dir.exists() {
+            println!("Atalho criado na Área de Trabalho com sucesso!");
         }
 
         Ok(())
